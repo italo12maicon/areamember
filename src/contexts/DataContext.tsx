@@ -1,5 +1,22 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Course, Product, AppSettings, User, Notification, WatchHistory, Favorite, Resource, SupportTicket, Banner, FixedNotification, UserSession, SecurityLog, SecuritySettings } from '../types';
+import {
+  userService,
+  courseService,
+  productService,
+  settingsService,
+  notificationService,
+  watchHistoryService,
+  favoriteService,
+  resourceService,
+  supportTicketService,
+  bannerService,
+  fixedNotificationService,
+  userSessionService,
+  securityLogService,
+  subscribeToCollection,
+  initializeDefaultData
+} from '../services/firebaseService';
 
 interface DataContextType {
   courses: Course[];
@@ -15,42 +32,43 @@ interface DataContextType {
   fixedNotifications: FixedNotification[];
   userSessions: UserSession[];
   securityLogs: SecurityLog[];
-  addCourse: (course: Course) => void;
-  updateCourse: (courseId: string, course: Partial<Course>) => void;
-  deleteCourse: (courseId: string) => void;
-  addProduct: (product: Product) => void;
-  updateProduct: (productId: string, product: Partial<Product>) => void;
-  deleteProduct: (productId: string) => void;
-  updateSettings: (settings: Partial<AppSettings>) => void;
-  addUser: (user: User) => void;
-  deleteUser: (userId: string) => void;
-  updateUser: (userId: string, updates: Partial<User>) => void;
-  addNotification: (notification: Notification) => void;
-  markNotificationAsRead: (notificationId: string) => void;
-  deleteNotification: (notificationId: string) => void;
-  markAllAsRead: (userId: string) => void;
-  addToWatchHistory: (history: WatchHistory) => void;
-  addFavorite: (userId: string, courseId?: string, productId?: string) => void;
-  removeFavorite: (userId: string, courseId?: string, productId?: string) => void;
-  addResource: (resource: Resource) => void;
-  deleteResource: (resourceId: string) => void;
-  addSupportTicket: (ticket: SupportTicket) => void;
-  updateSupportTicket: (ticketId: string, updates: Partial<SupportTicket>) => void;
-  addBanner: (banner: Banner) => void;
-  updateBanner: (bannerId: string, updates: Partial<Banner>) => void;
-  deleteBanner: (bannerId: string) => void;
-  addFixedNotification: (notification: FixedNotification) => void;
-  updateFixedNotification: (notificationId: string, updates: Partial<FixedNotification>) => void;
-  deleteFixedNotification: (notificationId: string) => void;
+  loading: boolean;
+  addCourse: (course: Course) => Promise<void>;
+  updateCourse: (courseId: string, course: Partial<Course>) => Promise<void>;
+  deleteCourse: (courseId: string) => Promise<void>;
+  addProduct: (product: Product) => Promise<void>;
+  updateProduct: (productId: string, product: Partial<Product>) => Promise<void>;
+  deleteProduct: (productId: string) => Promise<void>;
+  updateSettings: (settings: Partial<AppSettings>) => Promise<void>;
+  addUser: (user: User) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
+  updateUser: (userId: string, updates: Partial<User>) => Promise<void>;
+  addNotification: (notification: Notification) => Promise<void>;
+  markNotificationAsRead: (notificationId: string) => Promise<void>;
+  deleteNotification: (notificationId: string) => Promise<void>;
+  markAllAsRead: (userId: string) => Promise<void>;
+  addToWatchHistory: (history: WatchHistory) => Promise<void>;
+  addFavorite: (userId: string, courseId?: string, productId?: string) => Promise<void>;
+  removeFavorite: (userId: string, courseId?: string, productId?: string) => Promise<void>;
+  addResource: (resource: Resource) => Promise<void>;
+  deleteResource: (resourceId: string) => Promise<void>;
+  addSupportTicket: (ticket: SupportTicket) => Promise<void>;
+  updateSupportTicket: (ticketId: string, updates: Partial<SupportTicket>) => Promise<void>;
+  addBanner: (banner: Banner) => Promise<void>;
+  updateBanner: (bannerId: string, updates: Partial<Banner>) => Promise<void>;
+  deleteBanner: (bannerId: string) => Promise<void>;
+  addFixedNotification: (notification: FixedNotification) => Promise<void>;
+  updateFixedNotification: (notificationId: string, updates: Partial<FixedNotification>) => Promise<void>;
+  deleteFixedNotification: (notificationId: string) => Promise<void>;
   getActiveFixedNotifications: () => FixedNotification[];
-  blockUser: (userId: string, reason: string, adminId: string) => void;
-  unblockUser: (userId: string, adminId: string) => void;
-  terminateUserSession: (sessionId: string, adminId: string) => void;
-  terminateAllUserSessions: (userId: string, adminId: string) => void;
+  blockUser: (userId: string, reason: string, adminId: string) => Promise<void>;
+  unblockUser: (userId: string, adminId: string) => Promise<void>;
+  terminateUserSession: (sessionId: string, adminId: string) => Promise<void>;
+  terminateAllUserSessions: (userId: string, adminId: string) => Promise<void>;
   getUserSessions: (userId: string) => UserSession[];
   getActiveUserSessions: (userId: string) => UserSession[];
   getSecurityLogs: (userId?: string) => SecurityLog[];
-  updateSecuritySettings: (settings: Partial<SecuritySettings>) => void;
+  updateSecuritySettings: (settings: Partial<SecuritySettings>) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -102,46 +120,95 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [fixedNotifications, setFixedNotifications] = useState<FixedNotification[]>([]);
   const [userSessions, setUserSessions] = useState<UserSession[]>([]);
   const [securityLogs, setSecurityLogs] = useState<SecurityLog[]>([]);
+  const [loading, setLoading] = useState(true);
   
   const processedUnlocks = useRef<Set<string>>(new Set());
   const lastNotificationCheck = useRef<number>(0);
+  const unsubscribeFunctions = useRef<(() => void)[]>([]);
 
+  // Inicializar dados e configurar listeners
   useEffect(() => {
-    // Load data from localStorage
-    const savedCourses = localStorage.getItem('courses');
-    const savedProducts = localStorage.getItem('products');
-    const savedSettings = localStorage.getItem('settings');
-    const savedUsers = localStorage.getItem('users');
-    const savedNotifications = localStorage.getItem('notifications');
-    const savedWatchHistory = localStorage.getItem('watchHistory');
-    const savedFavorites = localStorage.getItem('favorites');
-    const savedResources = localStorage.getItem('resources');
-    const savedSupportTickets = localStorage.getItem('supportTickets');
-    const savedBanners = localStorage.getItem('banners');
-    const savedFixedNotifications = localStorage.getItem('fixedNotifications');
-    const savedUserSessions = localStorage.getItem('userSessions');
-    const savedSecurityLogs = localStorage.getItem('securityLogs');
+    const initializeData = async () => {
+      try {
+        setLoading(true);
+        
+        // Inicializar dados padrão
+        await initializeDefaultData();
+        
+        // Carregar dados iniciais
+        const [
+          coursesData,
+          productsData,
+          settingsData,
+          usersData,
+          resourcesData,
+          supportTicketsData,
+          bannersData,
+          fixedNotificationsData,
+          userSessionsData,
+          securityLogsData
+        ] = await Promise.all([
+          courseService.getAll(),
+          productService.getAll(),
+          settingsService.get(),
+          userService.getAll(),
+          resourceService.getAll(),
+          supportTicketService.getAll(),
+          bannerService.getAll(),
+          fixedNotificationService.getAll(),
+          userSessionService.getAll(),
+          securityLogService.getAll()
+        ]);
 
-    if (savedCourses) setCourses(JSON.parse(savedCourses));
-    if (savedProducts) setProducts(JSON.parse(savedProducts));
-    if (savedSettings) setSettings({ ...defaultSettings, ...JSON.parse(savedSettings) });
-    if (savedUsers) setUsers(JSON.parse(savedUsers));
-    if (savedNotifications) {
-      const parsedNotifications = JSON.parse(savedNotifications);
-      const limitedNotifications = parsedNotifications.slice(-100);
-      setNotifications(limitedNotifications);
-      localStorage.setItem('notifications', JSON.stringify(limitedNotifications));
-    }
-    if (savedWatchHistory) setWatchHistory(JSON.parse(savedWatchHistory));
-    if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
-    if (savedResources) setResources(JSON.parse(savedResources));
-    if (savedSupportTickets) setSupportTickets(JSON.parse(savedSupportTickets));
-    if (savedBanners) setBanners(JSON.parse(savedBanners));
-    if (savedFixedNotifications) setFixedNotifications(JSON.parse(savedFixedNotifications));
-    if (savedUserSessions) setUserSessions(JSON.parse(savedUserSessions));
-    if (savedSecurityLogs) setSecurityLogs(JSON.parse(savedSecurityLogs));
+        setCourses(coursesData);
+        setProducts(productsData);
+        setSettings(settingsData || defaultSettings);
+        setUsers(usersData);
+        setResources(resourcesData);
+        setSupportTickets(supportTicketsData);
+        setBanners(bannersData);
+        setFixedNotifications(fixedNotificationsData);
+        setUserSessions(userSessionsData);
+        setSecurityLogs(securityLogsData);
+
+        // Configurar listeners em tempo real
+        const unsubscribeCourses = subscribeToCollection('courses', setCourses);
+        const unsubscribeProducts = subscribeToCollection('products', setProducts);
+        const unsubscribeUsers = subscribeToCollection('users', setUsers);
+        const unsubscribeResources = subscribeToCollection('resources', setResources);
+        const unsubscribeBanners = subscribeToCollection('banners', setBanners);
+        const unsubscribeFixedNotifications = subscribeToCollection('fixedNotifications', setFixedNotifications);
+        const unsubscribeUserSessions = subscribeToCollection('userSessions', setUserSessions);
+        const unsubscribeSecurityLogs = subscribeToCollection('securityLogs', setSecurityLogs);
+
+        unsubscribeFunctions.current = [
+          unsubscribeCourses,
+          unsubscribeProducts,
+          unsubscribeUsers,
+          unsubscribeResources,
+          unsubscribeBanners,
+          unsubscribeFixedNotifications,
+          unsubscribeUserSessions,
+          unsubscribeSecurityLogs
+        ];
+
+        console.log('✅ Dados carregados do Firebase com sucesso!');
+      } catch (error) {
+        console.error('❌ Erro ao carregar dados do Firebase:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializeData();
+
+    // Cleanup listeners
+    return () => {
+      unsubscribeFunctions.current.forEach(unsubscribe => unsubscribe());
+    };
   }, []);
 
+  // Verificar desbloqueios programados
   useEffect(() => {
     const checkScheduledUnlocks = () => {
       const now = Date.now();
@@ -153,60 +220,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lastNotificationCheck.current = now;
       
       const currentDate = new Date();
-      const coursesToUpdate: Course[] = [];
-      const productsToUpdate: Product[] = [];
       
-      courses.forEach(course => {
+      // Verificar cursos para desbloqueio
+      courses.forEach(async (course) => {
         if (course.isBlocked && course.scheduledUnlockDate) {
           const unlockDate = new Date(course.scheduledUnlockDate);
           const unlockKey = `scheduled-course-${course.id}`;
           
           if (currentDate >= unlockDate && !processedUnlocks.current.has(unlockKey)) {
-            coursesToUpdate.push({
-              ...course,
+            await updateCourse(course.id, {
               isBlocked: false,
               scheduledUnlockDate: undefined
             });
-            processedUnlocks.current.add(unlockKey);
-          }
-        }
-      });
-
-      products.forEach(product => {
-        if (product.isBlocked && product.scheduledUnlockDate) {
-          const unlockDate = new Date(product.scheduledUnlockDate);
-          const unlockKey = `scheduled-product-${product.id}`;
-          
-          if (currentDate >= unlockDate && !processedUnlocks.current.has(unlockKey)) {
-            productsToUpdate.push({
-              ...product,
-              isBlocked: false,
-              scheduledUnlockDate: undefined
-            });
-            processedUnlocks.current.add(unlockKey);
-          }
-        }
-      });
-
-      if (coursesToUpdate.length > 0) {
-        const updatedCourses = courses.map(course => {
-          const updatedCourse = coursesToUpdate.find(c => c.id === course.id);
-          return updatedCourse || course;
-        });
-        
-        setCourses(updatedCourses);
-        localStorage.setItem('courses', JSON.stringify(updatedCourses));
-
-        const nonAdminUsers = users.filter(user => !user.isAdmin);
-        
-        coursesToUpdate.forEach(course => {
-          nonAdminUsers.forEach(user => {
-            const notificationId = `scheduled-unlock-course-${course.id}-${user.id}`;
             
-            const existingNotification = notifications.find(n => n.id === notificationId);
-            if (!existingNotification) {
-              addNotification({
-                id: notificationId,
+            processedUnlocks.current.add(unlockKey);
+            
+            // Notificar usuários
+            const nonAdminUsers = users.filter(user => !user.isAdmin);
+            nonAdminUsers.forEach(async (user) => {
+              await addNotification({
+                id: `scheduled-unlock-course-${course.id}-${user.id}`,
                 userId: user.id,
                 title: 'Curso Desbloqueado Automaticamente! 🎉',
                 message: `O curso "${course.title}" foi desbloqueado conforme programado e está disponível para você!`,
@@ -214,30 +247,30 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 read: false,
                 createdAt: new Date().toISOString(),
               });
-            }
-          });
-        });
-      }
+            });
+          }
+        }
+      });
 
-      if (productsToUpdate.length > 0) {
-        const updatedProducts = products.map(product => {
-          const updatedProduct = productsToUpdate.find(p => p.id === product.id);
-          return updatedProduct || product;
-        });
-        
-        setProducts(updatedProducts);
-        localStorage.setItem('products', JSON.stringify(updatedProducts));
-
-        const nonAdminUsers = users.filter(user => !user.isAdmin);
-        
-        productsToUpdate.forEach(product => {
-          nonAdminUsers.forEach(user => {
-            const notificationId = `scheduled-unlock-product-${product.id}-${user.id}`;
+      // Verificar produtos para desbloqueio
+      products.forEach(async (product) => {
+        if (product.isBlocked && product.scheduledUnlockDate) {
+          const unlockDate = new Date(product.scheduledUnlockDate);
+          const unlockKey = `scheduled-product-${product.id}`;
+          
+          if (currentDate >= unlockDate && !processedUnlocks.current.has(unlockKey)) {
+            await updateProduct(product.id, {
+              isBlocked: false,
+              scheduledUnlockDate: undefined
+            });
             
-            const existingNotification = notifications.find(n => n.id === notificationId);
-            if (!existingNotification) {
-              addNotification({
-                id: notificationId,
+            processedUnlocks.current.add(unlockKey);
+            
+            // Notificar usuários
+            const nonAdminUsers = users.filter(user => !user.isAdmin);
+            nonAdminUsers.forEach(async (user) => {
+              await addNotification({
+                id: `scheduled-unlock-product-${product.id}-${user.id}`,
                 userId: user.id,
                 title: 'Produto Desbloqueado Automaticamente! 🎉',
                 message: `O produto "${product.title}" foi desbloqueado conforme programado e está disponível para você!`,
@@ -245,10 +278,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 read: false,
                 createdAt: new Date().toISOString(),
               });
-            }
-          });
-        });
-      }
+            });
+          }
+        }
+      });
     };
 
     const timeoutId = setTimeout(checkScheduledUnlocks, 1000);
@@ -258,236 +291,143 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearTimeout(timeoutId);
       clearInterval(intervalId);
     };
-  }, [courses, products, users, notifications]);
+  }, [courses, products, users]);
 
-  const addCourse = (course: Course) => {
-    const newCourses = [...courses, course];
-    setCourses(newCourses);
-    localStorage.setItem('courses', JSON.stringify(newCourses));
+  // Implementação das funções CRUD
+  const addCourse = async (course: Course) => {
+    const { id, ...courseData } = course;
+    await courseService.create(courseData);
   };
 
-  const updateCourse = (courseId: string, courseUpdate: Partial<Course>) => {
-    const newCourses = courses.map(course => 
-      course.id === courseId ? { ...course, ...courseUpdate } : course
+  const updateCourse = async (courseId: string, courseUpdate: Partial<Course>) => {
+    await courseService.update(courseId, courseUpdate);
+  };
+
+  const deleteCourse = async (courseId: string) => {
+    await courseService.delete(courseId);
+  };
+
+  const addProduct = async (product: Product) => {
+    const { id, ...productData } = product;
+    await productService.create(productData);
+  };
+
+  const updateProduct = async (productId: string, productUpdate: Partial<Product>) => {
+    await productService.update(productId, productUpdate);
+  };
+
+  const deleteProduct = async (productId: string) => {
+    await productService.delete(productId);
+  };
+
+  const updateSettings = async (settingsUpdate: Partial<AppSettings>) => {
+    await settingsService.update(settingsUpdate);
+    setSettings(prev => ({ ...prev, ...settingsUpdate }));
+  };
+
+  const addUser = async (user: User) => {
+    const { id, ...userData } = user;
+    await userService.create(userData);
+  };
+
+  const deleteUser = async (userId: string) => {
+    await userService.delete(userId);
+  };
+
+  const updateUser = async (userId: string, updates: Partial<User>) => {
+    await userService.update(userId, updates);
+  };
+
+  const addNotification = async (notification: Notification) => {
+    const { id, ...notificationData } = notification;
+    await notificationService.create(notificationData);
+  };
+
+  const markNotificationAsRead = async (notificationId: string) => {
+    await notificationService.update(notificationId, { read: true });
+  };
+
+  const deleteNotification = async (notificationId: string) => {
+    await notificationService.delete(notificationId);
+  };
+
+  const markAllAsRead = async (userId: string) => {
+    const userNotifications = notifications.filter(n => n.userId === userId && !n.read);
+    await Promise.all(
+      userNotifications.map(notification => 
+        notificationService.update(notification.id, { read: true })
+      )
     );
-    setCourses(newCourses);
-    localStorage.setItem('courses', JSON.stringify(newCourses));
   };
 
-  const deleteCourse = (courseId: string) => {
-    const newCourses = courses.filter(course => course.id !== courseId);
-    setCourses(newCourses);
-    localStorage.setItem('courses', JSON.stringify(newCourses));
+  const addToWatchHistory = async (history: WatchHistory) => {
+    const { id, ...historyData } = history;
+    await watchHistoryService.createOrUpdate(historyData);
   };
 
-  const addProduct = (product: Product) => {
-    const newProducts = [...products, product];
-    setProducts(newProducts);
-    localStorage.setItem('products', JSON.stringify(newProducts));
-  };
-
-  const updateProduct = (productId: string, productUpdate: Partial<Product>) => {
-    const newProducts = products.map(product => 
-      product.id === productId ? { ...product, ...productUpdate } : product
-    );
-    setProducts(newProducts);
-    localStorage.setItem('products', JSON.stringify(newProducts));
-  };
-
-  const deleteProduct = (productId: string) => {
-    const newProducts = products.filter(product => product.id !== productId);
-    setProducts(newProducts);
-    localStorage.setItem('products', JSON.stringify(newProducts));
-  };
-
-  const updateSettings = (settingsUpdate: Partial<AppSettings>) => {
-    const newSettings = { ...settings, ...settingsUpdate };
-    setSettings(newSettings);
-    localStorage.setItem('settings', JSON.stringify(newSettings));
-  };
-
-  const addUser = (user: User) => {
-    const newUsers = [...users, user];
-    setUsers(newUsers);
-    localStorage.setItem('users', JSON.stringify(newUsers));
-  };
-
-  const deleteUser = (userId: string) => {
-    const newUsers = users.filter(user => user.id !== userId);
-    setUsers(newUsers);
-    localStorage.setItem('users', JSON.stringify(newUsers));
-  };
-
-  const updateUser = (userId: string, updates: Partial<User>) => {
-    const newUsers = users.map(user => 
-      user.id === userId ? { ...user, ...updates } : user
-    );
-    setUsers(newUsers);
-    localStorage.setItem('users', JSON.stringify(newUsers));
-    
-    const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-    if (currentUser && currentUser.id === userId) {
-      const updatedCurrentUser = { ...currentUser, ...updates };
-      localStorage.setItem('currentUser', JSON.stringify(updatedCurrentUser));
-    }
-  };
-
-  const addNotification = (notification: Notification) => {
-    const isDuplicate = notifications.some(n => 
-      n.userId === notification.userId && 
-      n.title === notification.title && 
-      n.message === notification.message &&
-      Math.abs(new Date(n.createdAt).getTime() - new Date(notification.createdAt).getTime()) < 60000
-    );
-    
-    if (isDuplicate) {
-      return;
-    }
-    
-    const newNotifications = [...notifications, notification];
-    const limitedNotifications = newNotifications.slice(-100);
-    
-    setNotifications(limitedNotifications);
-    localStorage.setItem('notifications', JSON.stringify(limitedNotifications));
-  };
-
-  const markNotificationAsRead = (notificationId: string) => {
-    const newNotifications = notifications.map(notification =>
-      notification.id === notificationId ? { ...notification, read: true } : notification
-    );
-    setNotifications(newNotifications);
-    localStorage.setItem('notifications', JSON.stringify(newNotifications));
-  };
-
-  const deleteNotification = (notificationId: string) => {
-    const newNotifications = notifications.filter(notification => notification.id !== notificationId);
-    setNotifications(newNotifications);
-    localStorage.setItem('notifications', JSON.stringify(newNotifications));
-  };
-
-  const markAllAsRead = (userId: string) => {
-    const newNotifications = notifications.map(notification =>
-      notification.userId === userId ? { ...notification, read: true } : notification
-    );
-    setNotifications(newNotifications);
-    localStorage.setItem('notifications', JSON.stringify(newNotifications));
-  };
-
-  const addToWatchHistory = (history: WatchHistory) => {
-    const existingIndex = watchHistory.findIndex(h => 
-      h.userId === history.userId && 
-      ((h.courseId && history.courseId && h.courseId === history.courseId) ||
-       (h.productId && history.productId && h.productId === history.productId))
-    );
-    
-    let newWatchHistory;
-    if (existingIndex >= 0) {
-      newWatchHistory = [...watchHistory];
-      newWatchHistory[existingIndex] = history;
-    } else {
-      newWatchHistory = [...watchHistory, history];
-    }
-    
-    setWatchHistory(newWatchHistory);
-    localStorage.setItem('watchHistory', JSON.stringify(newWatchHistory));
-  };
-
-  const addFavorite = (userId: string, courseId?: string, productId?: string) => {
-    const existingFavorite = favorites.find(fav => 
-      fav.userId === userId && 
-      ((courseId && fav.courseId === courseId) || (productId && fav.productId === productId))
-    );
-    
-    if (existingFavorite) {
-      return;
-    }
-    
-    const favorite: Favorite = {
+  const addFavorite = async (userId: string, courseId?: string, productId?: string) => {
+    await favoriteService.create({
       id: Date.now().toString(),
       userId,
       courseId,
       productId,
       addedAt: new Date().toISOString(),
-    };
+    });
+  };
+
+  const removeFavorite = async (userId: string, courseId?: string, productId?: string) => {
+    const favorite = favorites.find(fav => 
+      fav.userId === userId && 
+      ((courseId && fav.courseId === courseId) || (productId && fav.productId === productId))
+    );
     
-    const newFavorites = [...favorites, favorite];
-    setFavorites(newFavorites);
-    localStorage.setItem('favorites', JSON.stringify(newFavorites));
+    if (favorite) {
+      await favoriteService.delete(favorite.id);
+    }
   };
 
-  const removeFavorite = (userId: string, courseId?: string, productId?: string) => {
-    const newFavorites = favorites.filter(fav => 
-      !(fav.userId === userId && 
-        ((courseId && fav.courseId === courseId) || (productId && fav.productId === productId)))
-    );
-    setFavorites(newFavorites);
-    localStorage.setItem('favorites', JSON.stringify(newFavorites));
+  const addResource = async (resource: Resource) => {
+    const { id, ...resourceData } = resource;
+    await resourceService.create(resourceData);
   };
 
-  const addResource = (resource: Resource) => {
-    const newResources = [...resources, resource];
-    setResources(newResources);
-    localStorage.setItem('resources', JSON.stringify(newResources));
+  const deleteResource = async (resourceId: string) => {
+    await resourceService.delete(resourceId);
   };
 
-  const deleteResource = (resourceId: string) => {
-    const newResources = resources.filter(resource => resource.id !== resourceId);
-    setResources(newResources);
-    localStorage.setItem('resources', JSON.stringify(newResources));
+  const addSupportTicket = async (ticket: SupportTicket) => {
+    const { id, ...ticketData } = ticket;
+    await supportTicketService.create(ticketData);
   };
 
-  const addSupportTicket = (ticket: SupportTicket) => {
-    const newTickets = [...supportTickets, ticket];
-    setSupportTickets(newTickets);
-    localStorage.setItem('supportTickets', JSON.stringify(newTickets));
+  const updateSupportTicket = async (ticketId: string, updates: Partial<SupportTicket>) => {
+    await supportTicketService.update(ticketId, updates);
   };
 
-  const updateSupportTicket = (ticketId: string, updates: Partial<SupportTicket>) => {
-    const newTickets = supportTickets.map(ticket =>
-      ticket.id === ticketId ? { ...ticket, ...updates } : ticket
-    );
-    setSupportTickets(newTickets);
-    localStorage.setItem('supportTickets', JSON.stringify(newTickets));
+  const addBanner = async (banner: Banner) => {
+    const { id, ...bannerData } = banner;
+    await bannerService.create(bannerData);
   };
 
-  const addBanner = (banner: Banner) => {
-    const newBanners = [...banners, banner];
-    setBanners(newBanners);
-    localStorage.setItem('banners', JSON.stringify(newBanners));
+  const updateBanner = async (bannerId: string, updates: Partial<Banner>) => {
+    await bannerService.update(bannerId, updates);
   };
 
-  const updateBanner = (bannerId: string, updates: Partial<Banner>) => {
-    const newBanners = banners.map(banner =>
-      banner.id === bannerId ? { ...banner, ...updates } : banner
-    );
-    setBanners(newBanners);
-    localStorage.setItem('banners', JSON.stringify(newBanners));
+  const deleteBanner = async (bannerId: string) => {
+    await bannerService.delete(bannerId);
   };
 
-  const deleteBanner = (bannerId: string) => {
-    const newBanners = banners.filter(banner => banner.id !== bannerId);
-    setBanners(newBanners);
-    localStorage.setItem('banners', JSON.stringify(newBanners));
+  const addFixedNotification = async (notification: FixedNotification) => {
+    const { id, ...notificationData } = notification;
+    await fixedNotificationService.create(notificationData);
   };
 
-  const addFixedNotification = (notification: FixedNotification) => {
-    const newNotifications = [...fixedNotifications, notification];
-    setFixedNotifications(newNotifications);
-    localStorage.setItem('fixedNotifications', JSON.stringify(newNotifications));
+  const updateFixedNotification = async (notificationId: string, updates: Partial<FixedNotification>) => {
+    await fixedNotificationService.update(notificationId, updates);
   };
 
-  const updateFixedNotification = (notificationId: string, updates: Partial<FixedNotification>) => {
-    const newNotifications = fixedNotifications.map(notification =>
-      notification.id === notificationId ? { ...notification, ...updates } : notification
-    );
-    setFixedNotifications(newNotifications);
-    localStorage.setItem('fixedNotifications', JSON.stringify(newNotifications));
-  };
-
-  const deleteFixedNotification = (notificationId: string) => {
-    const newNotifications = fixedNotifications.filter(notification => notification.id !== notificationId);
-    setFixedNotifications(newNotifications);
-    localStorage.setItem('fixedNotifications', JSON.stringify(newNotifications));
+  const deleteFixedNotification = async (notificationId: string) => {
+    await fixedNotificationService.delete(notificationId);
   };
 
   const getActiveFixedNotifications = () => {
@@ -502,17 +442,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const blockUser = (userId: string, reason: string, adminId: string) => {
+  const blockUser = async (userId: string, reason: string, adminId: string) => {
     const updates: Partial<User> = {
       isBlocked: true,
       blockedReason: reason,
       blockedAt: new Date().toISOString()
     };
     
-    updateUser(userId, updates);
-    terminateAllUserSessions(userId, adminId);
+    await updateUser(userId, updates);
+    await terminateAllUserSessions(userId, adminId);
     
-    const newLog: SecurityLog = {
+    await securityLogService.create({
       id: Date.now().toString(),
       userId,
       action: 'blocked',
@@ -522,23 +462,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       details: `Usuário bloqueado pelo administrador. Motivo: ${reason}`,
       severity: 'high',
       adminId
-    };
-    
-    const newLogs = [...securityLogs, newLog];
-    setSecurityLogs(newLogs);
-    localStorage.setItem('securityLogs', JSON.stringify(newLogs));
+    });
   };
 
-  const unblockUser = (userId: string, adminId: string) => {
+  const unblockUser = async (userId: string, adminId: string) => {
     const updates: Partial<User> = {
       isBlocked: false,
       blockedReason: undefined,
       blockedAt: undefined
     };
     
-    updateUser(userId, updates);
+    await updateUser(userId, updates);
     
-    const newLog: SecurityLog = {
+    await securityLogService.create({
       id: Date.now().toString(),
       userId,
       action: 'unblocked',
@@ -548,32 +484,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       details: 'Usuário desbloqueado pelo administrador',
       severity: 'medium',
       adminId
-    };
-    
-    const newLogs = [...securityLogs, newLog];
-    setSecurityLogs(newLogs);
-    localStorage.setItem('securityLogs', JSON.stringify(newLogs));
+    });
   };
 
-  const terminateUserSession = (sessionId: string, adminId: string) => {
+  const terminateUserSession = async (sessionId: string, adminId: string) => {
     const session = userSessions.find(s => s.id === sessionId);
     if (!session) return;
     
-    const updatedSessions = userSessions.map(s =>
-      s.id === sessionId
-        ? {
-            ...s,
-            isActive: false,
-            logoutTime: new Date().toISOString(),
-            sessionDuration: Math.floor((Date.now() - new Date(s.loginTime).getTime()) / (1000 * 60))
-          }
-        : s
-    );
+    await userSessionService.update(sessionId, {
+      isActive: false,
+      logoutTime: new Date().toISOString(),
+      sessionDuration: Math.floor((Date.now() - new Date(session.loginTime).getTime()) / (1000 * 60))
+    });
     
-    setUserSessions(updatedSessions);
-    localStorage.setItem('userSessions', JSON.stringify(updatedSessions));
-    
-    const newLog: SecurityLog = {
+    await securityLogService.create({
       id: Date.now().toString(),
       userId: session.userId,
       action: 'logout',
@@ -583,31 +507,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       details: `Sessão terminada pelo administrador (IP: ${session.ipAddress})`,
       severity: 'medium',
       adminId
-    };
-    
-    const newLogs = [...securityLogs, newLog];
-    setSecurityLogs(newLogs);
-    localStorage.setItem('securityLogs', JSON.stringify(newLogs));
+    });
   };
 
-  const terminateAllUserSessions = (userId: string, adminId: string) => {
+  const terminateAllUserSessions = async (userId: string, adminId: string) => {
     const userActiveSessions = userSessions.filter(s => s.userId === userId && s.isActive);
     
-    const updatedSessions = userSessions.map(s =>
-      s.userId === userId && s.isActive
-        ? {
-            ...s,
-            isActive: false,
-            logoutTime: new Date().toISOString(),
-            sessionDuration: Math.floor((Date.now() - new Date(s.loginTime).getTime()) / (1000 * 60))
-          }
-        : s
+    await Promise.all(
+      userActiveSessions.map(session =>
+        userSessionService.update(session.id, {
+          isActive: false,
+          logoutTime: new Date().toISOString(),
+          sessionDuration: Math.floor((Date.now() - new Date(session.loginTime).getTime()) / (1000 * 60))
+        })
+      )
     );
     
-    setUserSessions(updatedSessions);
-    localStorage.setItem('userSessions', JSON.stringify(updatedSessions));
-    
-    const newLog: SecurityLog = {
+    await securityLogService.create({
       id: Date.now().toString(),
       userId,
       action: 'logout',
@@ -617,11 +533,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       details: `Todas as sessões (${userActiveSessions.length}) terminadas pelo administrador`,
       severity: 'high',
       adminId
-    };
-    
-    const newLogs = [...securityLogs, newLog];
-    setSecurityLogs(newLogs);
-    localStorage.setItem('securityLogs', JSON.stringify(newLogs));
+    });
   };
 
   const getUserSessions = (userId: string): UserSession[] => {
@@ -639,13 +551,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return securityLogs;
   };
 
-  const updateSecuritySettings = (securitySettings: Partial<SecuritySettings>) => {
+  const updateSecuritySettings = async (securitySettings: Partial<SecuritySettings>) => {
     const newSettings = {
       ...settings,
       security: { ...settings.security, ...securitySettings }
     };
-    setSettings(newSettings);
-    localStorage.setItem('settings', JSON.stringify(newSettings));
+    await updateSettings(newSettings);
   };
 
   return (
@@ -663,6 +574,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fixedNotifications,
       userSessions,
       securityLogs,
+      loading,
       addCourse,
       updateCourse,
       deleteCourse,
