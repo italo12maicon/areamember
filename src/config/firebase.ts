@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
-import { getAuth, connectAuthEmulator } from 'firebase/auth';
-import { getStorage, connectStorageEmulator } from 'firebase/storage';
+import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
+import { getStorage } from 'firebase/storage';
 
 // Configuração do Firebase
 const firebaseConfig = {
@@ -20,20 +20,5 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
-
-// Função para inicializar dados padrão
-export const initializeFirebaseData = async () => {
-  try {
-    console.log('🔄 Inicializando dados do Firebase...');
-    
-    // Importar e executar inicialização
-    const { initializeDefaultData } = await import('../services/firebaseService');
-    await initializeDefaultData();
-    
-    console.log('✅ Dados do Firebase inicializados com sucesso!');
-  } catch (error) {
-    console.error('❌ Erro ao inicializar dados do Firebase:', error);
-  }
-};
 
 export default app;

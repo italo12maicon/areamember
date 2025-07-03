@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, AuthState, UserSession, SecurityLog } from '../types';
 import { getClientIP, getUserAgent, getDeviceInfo, getLocationFromIP, generateSessionId } from '../utils/security';
-import { userService, userSessionService, securityLogService } from '../services/firebaseService';
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<boolean>;
@@ -55,7 +54,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const createSecurityLog = async (
+  const createSecurityLog = (
     userId: string,
     action: SecurityLog['action'],
     ipAddress: string,
@@ -64,30 +63,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     severity: SecurityLog['severity'] = 'low',
     adminId?: string
   ) => {
-    try {
-      await securityLogService.create({
-        id: Date.now().toString(),
-        userId,
-        action,
-        ipAddress,
-        userAgent,
-        timestamp: new Date().toISOString(),
-        details,
-        severity,
-        adminId
-      });
-    } catch (error) {
-      console.error('Erro ao criar log de segurança:', error);
-    }
+    const logs = JSON.parse(localStorage.getItem('securityLogs') || '[]');
+    const newLog: SecurityLog = {
+      id: Date.now().toString(),
+      userId,
+      action,
+      ipAddress,
+      userAgent,
+      timestamp: new Date().toISOString(),
+      details,
+      severity,
+      adminId
+    };
+    
+    logs.push(newLog);
+    localStorage.setItem('securityLogs', JSON.stringify(logs));
+    
+    console.log('Security Log Created:', newLog); // Debug log
   };
 
   const createUserSession = async (user: User): Promise<UserSession> => {
-    console.log('Creating user session for:', user.name);
+    console.log('Creating user session for:', user.name); // Debug log
     
     const ipAddress = await getClientIP();
     const userAgent = getUserAgent();
     const { device, browser } = getDeviceInfo();
     const location = await getLocationFromIP(ipAddress);
+    
+    console.log('IP Address obtained:', ipAddress); // Debug log
+    console.log('Device info:', { device, browser }); // Debug log
     
     const session: UserSession = {
       id: generateSessionId(),
@@ -102,18 +106,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       browser
     };
     
-    // Salvar sessão no Firebase
-    try {
-      await userSessionService.create(session);
-    } catch (error) {
-      console.error('Erro ao salvar sessão no Firebase:', error);
-    }
+    // Salvar sessão
+    const sessions = JSON.parse(localStorage.getItem('userSessions') || '[]');
+    sessions.push(session);
+    localStorage.setItem('userSessions', JSON.stringify(sessions));
     
-    // Salvar também no localStorage para recuperação
-    localStorage.setItem('currentSession', JSON.stringify(session));
+    console.log('Session created and saved:', session); // Debug log
     
     // Criar log de segurança
-    await createSecurityLog(
+    createSecurityLog(
       user.id,
       'login',
       ipAddress,
@@ -125,144 +126,148 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return session;
   };
 
-  const updateLastActivity = async (sessionId: string) => {
-    try {
-      await userSessionService.update(sessionId, {
-        lastActivity: new Date().toISOString()
-      });
-    } catch (error) {
-      console.error('Erro ao atualizar última atividade:', error);
-    }
+  const updateLastActivity = (sessionId: string) => {
+    const sessions = JSON.parse(localStorage.getItem('userSessions') || '[]');
+    const updatedSessions = sessions.map((session: UserSession) => 
+      session.id === sessionId 
+        ? { ...session, lastActivity: new Date().toISOString() }
+        : session
+    );
+    localStorage.setItem('userSessions', JSON.stringify(updatedSessions));
   };
 
-  const terminateSession = async (sessionId: string) => {
-    try {
-      const session = currentSession;
-      if (session) {
-        await userSessionService.update(sessionId, {
-          isActive: false,
-          logoutTime: new Date().toISOString(),
-          sessionDuration: Math.floor((Date.now() - new Date(session.loginTime).getTime()) / (1000 * 60))
-        });
-      }
-    } catch (error) {
-      console.error('Erro ao terminar sessão:', error);
-    }
+  const terminateSession = (sessionId: string) => {
+    const sessions = JSON.parse(localStorage.getItem('userSessions') || '[]');
+    const updatedSessions = sessions.map((session: UserSession) => 
+      session.id === sessionId 
+        ? { 
+            ...session, 
+            isActive: false, 
+            logoutTime: new Date().toISOString(),
+            sessionDuration: Math.floor((Date.now() - new Date(session.loginTime).getTime()) / (1000 * 60))
+          }
+        : session
+    );
+    localStorage.setItem('userSessions', JSON.stringify(updatedSessions));
+  };
+
+  const checkUserBlocked = (userId: string): boolean => {
+    const users = JSON.parse(localStorage.getItem('users') || '[]') as User[];
+    const user = users.find(u => u.id === userId);
+    return user?.isBlocked || false;
   };
 
   const checkMultipleActiveSessions = async (userId: string, currentIP: string): Promise<boolean> => {
-    try {
-      const allSessions = await userSessionService.getAll();
-      const activeSessions = allSessions.filter((s: UserSession) => 
-        s.userId === userId && s.isActive
+    const sessions = JSON.parse(localStorage.getItem('userSessions') || '[]');
+    const activeSessions = sessions.filter((s: UserSession) => 
+      s.userId === userId && s.isActive
+    );
+    
+    const uniqueIPs = new Set(activeSessions.map((s: UserSession) => s.ipAddress));
+    
+    console.log('Active sessions for user:', activeSessions); // Debug log
+    console.log('Unique IPs:', Array.from(uniqueIPs)); // Debug log
+    
+    // Se há mais de 2 IPs diferentes ativos, criar log de atividade suspeita
+    if (uniqueIPs.size > 2) {
+      createSecurityLog(
+        userId,
+        'multiple_ips',
+        currentIP,
+        getUserAgent(),
+        `Usuário ativo em ${uniqueIPs.size} IPs diferentes: ${Array.from(uniqueIPs).join(', ')}`,
+        'high'
       );
-      
-      const uniqueIPs = new Set(activeSessions.map((s: UserSession) => s.ipAddress));
-      
-      // Se há mais de 2 IPs diferentes ativos, criar log de atividade suspeita
-      if (uniqueIPs.size > 2) {
-        await createSecurityLog(
-          userId,
-          'multiple_ips',
-          currentIP,
-          getUserAgent(),
-          `Usuário ativo em ${uniqueIPs.size} IPs diferentes: ${Array.from(uniqueIPs).join(', ')}`,
-          'high'
-        );
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      console.error('Erro ao verificar múltiplas sessões:', error);
-      return false;
+      return true;
     }
+    
+    return false;
   };
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    console.log('Login attempt for:', email);
+    console.log('Login attempt for:', email); // Debug log
     
-    try {
-      // Check admin credentials
-      if (email === ADMIN_CREDENTIALS.email && password === ADMIN_CREDENTIALS.password) {
-        const adminUser: User = {
-          id: 'admin',
-          email: ADMIN_CREDENTIALS.email,
-          password: ADMIN_CREDENTIALS.password,
-          name: 'Administrator',
-          isAdmin: true,
-          registrationDate: new Date().toISOString(),
-          unlockedCourses: [],
-          unlockedProducts: []
-        };
-        
-        const session = await createUserSession(adminUser);
-        
-        setAuthState({
-          isAuthenticated: true,
-          user: adminUser
-        });
-        setCurrentSession(session);
-        
-        localStorage.setItem('currentUser', JSON.stringify(adminUser));
-        
-        console.log('Admin login successful');
-        return true;
-      }
-
-      // Check regular users from Firebase
-      const users = await userService.getAll();
-      const user = users.find(u => u.email === email && u.password === password);
+    // Check admin credentials
+    if (email === ADMIN_CREDENTIALS.email && password === ADMIN_CREDENTIALS.password) {
+      const adminUser: User = {
+        id: 'admin',
+        email: ADMIN_CREDENTIALS.email,
+        password: ADMIN_CREDENTIALS.password,
+        name: 'Administrator',
+        isAdmin: true,
+        registrationDate: new Date().toISOString(),
+        unlockedCourses: [],
+        unlockedProducts: []
+      };
       
-      if (user) {
-        console.log('User found:', user.name);
-        
-        // Garantir que unlockedProducts existe
-        if (!user.unlockedProducts) {
-          user.unlockedProducts = [];
-          await userService.update(user.id, { unlockedProducts: [] });
-        }
-        
-        // Verificar se usuário está bloqueado
-        if (user.isBlocked) {
-          const currentIP = await getClientIP();
-          await createSecurityLog(
-            user.id,
-            'blocked',
-            currentIP,
-            getUserAgent(),
-            `Tentativa de login de usuário bloqueado: ${user.blockedReason || 'Motivo não especificado'}`,
-            'medium'
-          );
-          console.log('User is blocked');
-          return false;
-        }
-        
-        const currentIP = await getClientIP();
-        
-        // Verificar múltiplas sessões ativas
-        await checkMultipleActiveSessions(user.id, currentIP);
-        
-        const session = await createUserSession(user);
-        
-        setAuthState({
-          isAuthenticated: true,
-          user
-        });
-        setCurrentSession(session);
-        
-        localStorage.setItem('currentUser', JSON.stringify(user));
-        
-        console.log('User login successful');
-        return true;
-      }
-
-      console.log('Login failed - user not found or wrong credentials');
-      return false;
-    } catch (error) {
-      console.error('Erro durante login:', error);
-      return false;
+      const session = await createUserSession(adminUser);
+      
+      setAuthState({
+        isAuthenticated: true,
+        user: adminUser
+      });
+      setCurrentSession(session);
+      
+      localStorage.setItem('currentUser', JSON.stringify(adminUser));
+      localStorage.setItem('currentSession', JSON.stringify(session));
+      
+      console.log('Admin login successful'); // Debug log
+      return true;
     }
+
+    // Check regular users
+    const users = JSON.parse(localStorage.getItem('users') || '[]') as User[];
+    const user = users.find(u => u.email === email && u.password === password);
+    
+    if (user) {
+      console.log('User found:', user.name); // Debug log
+      
+      // Garantir que unlockedProducts existe
+      if (!user.unlockedProducts) {
+        user.unlockedProducts = [];
+        // Atualizar no localStorage
+        const updatedUsers = users.map(u => u.id === user.id ? { ...u, unlockedProducts: [] } : u);
+        localStorage.setItem('users', JSON.stringify(updatedUsers));
+      }
+      
+      // Verificar se usuário está bloqueado
+      if (user.isBlocked) {
+        const currentIP = await getClientIP();
+        createSecurityLog(
+          user.id,
+          'blocked',
+          currentIP,
+          getUserAgent(),
+          `Tentativa de login de usuário bloqueado: ${user.blockedReason || 'Motivo não especificado'}`,
+          'medium'
+        );
+        console.log('User is blocked'); // Debug log
+        return false;
+      }
+      
+      const currentIP = await getClientIP();
+      console.log('Current IP for login:', currentIP); // Debug log
+      
+      // Verificar múltiplas sessões ativas
+      await checkMultipleActiveSessions(user.id, currentIP);
+      
+      const session = await createUserSession(user);
+      
+      setAuthState({
+        isAuthenticated: true,
+        user
+      });
+      setCurrentSession(session);
+      
+      localStorage.setItem('currentUser', JSON.stringify(user));
+      localStorage.setItem('currentSession', JSON.stringify(session));
+      
+      console.log('User login successful'); // Debug log
+      return true;
+    }
+
+    console.log('Login failed - user not found or wrong credentials'); // Debug log
+    return false;
   };
 
   const logout = () => {
@@ -290,56 +295,54 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('currentUser');
     localStorage.removeItem('currentSession');
     
-    console.log('User logged out');
+    console.log('User logged out'); // Debug log
   };
 
   const register = async (email: string, password: string, name: string): Promise<boolean> => {
-    try {
-      const users = await userService.getAll();
-      
-      if (users.find(u => u.email === email)) {
-        return false; // User already exists
-      }
-
-      const newUser: Omit<User, 'id'> = {
-        email,
-        password,
-        name,
-        isAdmin: false,
-        registrationDate: new Date().toISOString(),
-        unlockedCourses: [],
-        unlockedProducts: [],
-        isBlocked: false
-      };
-
-      await userService.create(newUser);
-      return true;
-    } catch (error) {
-      console.error('Erro durante registro:', error);
-      return false;
+    const users = JSON.parse(localStorage.getItem('users') || '[]') as User[];
+    
+    if (users.find(u => u.email === email)) {
+      return false; // User already exists
     }
+
+    const newUser: User = {
+      id: Date.now().toString(),
+      email,
+      password,
+      name,
+      isAdmin: false,
+      registrationDate: new Date().toISOString(),
+      unlockedCourses: [],
+      unlockedProducts: [],
+      isBlocked: false
+    };
+
+    users.push(newUser);
+    localStorage.setItem('users', JSON.stringify(users));
+    
+    return true;
   };
 
-  const updateUser = async (userId: string, updates: Partial<User>) => {
-    try {
-      await userService.update(userId, updates);
+  const updateUser = (userId: string, updates: Partial<User>) => {
+    const users = JSON.parse(localStorage.getItem('users') || '[]') as User[];
+    const updatedUsers = users.map(user => 
+      user.id === userId ? { ...user, ...updates } : user
+    );
+    localStorage.setItem('users', JSON.stringify(updatedUsers));
+    
+    // Se o usuário atual foi atualizado, atualizar o estado
+    if (authState.user && authState.user.id === userId) {
+      const updatedUser = { ...authState.user, ...updates };
+      setAuthState({
+        ...authState,
+        user: updatedUser
+      });
+      localStorage.setItem('currentUser', JSON.stringify(updatedUser));
       
-      // Se o usuário atual foi atualizado, atualizar o estado
-      if (authState.user && authState.user.id === userId) {
-        const updatedUser = { ...authState.user, ...updates };
-        setAuthState({
-          ...authState,
-          user: updatedUser
-        });
-        localStorage.setItem('currentUser', JSON.stringify(updatedUser));
-        
-        // Se o usuário foi bloqueado, fazer logout
-        if (updates.isBlocked) {
-          logout();
-        }
+      // Se o usuário foi bloqueado, fazer logout
+      if (updates.isBlocked) {
+        logout();
       }
-    } catch (error) {
-      console.error('Erro ao atualizar usuário:', error);
     }
   };
 

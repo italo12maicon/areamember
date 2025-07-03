@@ -1,22 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { Course, Product, AppSettings, User, Notification, WatchHistory, Favorite, Resource, SupportTicket, Banner, FixedNotification, UserSession, SecurityLog, SecuritySettings } from '../types';
-import {
-  userService,
-  courseService,
-  productService,
-  settingsService,
-  notificationService,
-  watchHistoryService,
-  favoriteService,
-  resourceService,
-  supportTicketService,
-  bannerService,
-  fixedNotificationService,
-  userSessionService,
-  securityLogService,
-  subscribeToCollection,
-  initializeDefaultData
-} from '../services/firebaseService';
 
 interface DataContextType {
   courses: Course[];
@@ -32,43 +15,42 @@ interface DataContextType {
   fixedNotifications: FixedNotification[];
   userSessions: UserSession[];
   securityLogs: SecurityLog[];
-  loading: boolean;
-  addCourse: (course: Course) => Promise<void>;
-  updateCourse: (courseId: string, course: Partial<Course>) => Promise<void>;
-  deleteCourse: (courseId: string) => Promise<void>;
-  addProduct: (product: Product) => Promise<void>;
-  updateProduct: (productId: string, product: Partial<Product>) => Promise<void>;
-  deleteProduct: (productId: string) => Promise<void>;
-  updateSettings: (settings: Partial<AppSettings>) => Promise<void>;
-  addUser: (user: User) => Promise<void>;
-  deleteUser: (userId: string) => Promise<void>;
-  updateUser: (userId: string, updates: Partial<User>) => Promise<void>;
-  addNotification: (notification: Notification) => Promise<void>;
-  markNotificationAsRead: (notificationId: string) => Promise<void>;
-  deleteNotification: (notificationId: string) => Promise<void>;
-  markAllAsRead: (userId: string) => Promise<void>;
-  addToWatchHistory: (history: WatchHistory) => Promise<void>;
-  addFavorite: (userId: string, courseId?: string, productId?: string) => Promise<void>;
-  removeFavorite: (userId: string, courseId?: string, productId?: string) => Promise<void>;
-  addResource: (resource: Resource) => Promise<void>;
-  deleteResource: (resourceId: string) => Promise<void>;
-  addSupportTicket: (ticket: SupportTicket) => Promise<void>;
-  updateSupportTicket: (ticketId: string, updates: Partial<SupportTicket>) => Promise<void>;
-  addBanner: (banner: Banner) => Promise<void>;
-  updateBanner: (bannerId: string, updates: Partial<Banner>) => Promise<void>;
-  deleteBanner: (bannerId: string) => Promise<void>;
-  addFixedNotification: (notification: FixedNotification) => Promise<void>;
-  updateFixedNotification: (notificationId: string, updates: Partial<FixedNotification>) => Promise<void>;
-  deleteFixedNotification: (notificationId: string) => Promise<void>;
+  addCourse: (course: Course) => void;
+  updateCourse: (courseId: string, course: Partial<Course>) => void;
+  deleteCourse: (courseId: string) => void;
+  addProduct: (product: Product) => void;
+  updateProduct: (productId: string, product: Partial<Product>) => void;
+  deleteProduct: (productId: string) => void;
+  updateSettings: (settings: Partial<AppSettings>) => void;
+  addUser: (user: User) => void;
+  deleteUser: (userId: string) => void;
+  updateUser: (userId: string, updates: Partial<User>) => void;
+  addNotification: (notification: Notification) => void;
+  markNotificationAsRead: (notificationId: string) => void;
+  deleteNotification: (notificationId: string) => void;
+  markAllAsRead: (userId: string) => void;
+  addToWatchHistory: (history: WatchHistory) => void;
+  addFavorite: (userId: string, courseId?: string, productId?: string) => void;
+  removeFavorite: (userId: string, courseId?: string, productId?: string) => void;
+  addResource: (resource: Resource) => void;
+  deleteResource: (resourceId: string) => void;
+  addSupportTicket: (ticket: SupportTicket) => void;
+  updateSupportTicket: (ticketId: string, updates: Partial<SupportTicket>) => void;
+  addBanner: (banner: Banner) => void;
+  updateBanner: (bannerId: string, updates: Partial<Banner>) => void;
+  deleteBanner: (bannerId: string) => void;
+  addFixedNotification: (notification: FixedNotification) => void;
+  updateFixedNotification: (notificationId: string, updates: Partial<FixedNotification>) => void;
+  deleteFixedNotification: (notificationId: string) => void;
   getActiveFixedNotifications: () => FixedNotification[];
-  blockUser: (userId: string, reason: string, adminId: string) => Promise<void>;
-  unblockUser: (userId: string, adminId: string) => Promise<void>;
-  terminateUserSession: (sessionId: string, adminId: string) => Promise<void>;
-  terminateAllUserSessions: (userId: string, adminId: string) => Promise<void>;
+  blockUser: (userId: string, reason: string, adminId: string) => void;
+  unblockUser: (userId: string, adminId: string) => void;
+  terminateUserSession: (sessionId: string, adminId: string) => void;
+  terminateAllUserSessions: (userId: string, adminId: string) => void;
   getUserSessions: (userId: string) => UserSession[];
   getActiveUserSessions: (userId: string) => UserSession[];
   getSecurityLogs: (userId?: string) => SecurityLog[];
-  updateSecuritySettings: (settings: Partial<SecuritySettings>) => Promise<void>;
+  updateSecuritySettings: (settings: Partial<SecuritySettings>) => void;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -120,167 +102,48 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [fixedNotifications, setFixedNotifications] = useState<FixedNotification[]>([]);
   const [userSessions, setUserSessions] = useState<UserSession[]>([]);
   const [securityLogs, setSecurityLogs] = useState<SecurityLog[]>([]);
-  const [loading, setLoading] = useState(true);
   
   const processedUnlocks = useRef<Set<string>>(new Set());
   const lastNotificationCheck = useRef<number>(0);
-  const unsubscribeFunctions = useRef<(() => void)[]>([]);
 
-  // Inicializar dados e configurar listeners
   useEffect(() => {
-    const initializeData = async () => {
-      try {
-        setLoading(true);
-        console.log('🔄 Inicializando dados do Firebase...');
-        
-        // Inicializar dados padrão
-        await initializeDefaultData();
-        
-        // Carregar dados iniciais
-        console.log('📥 Carregando dados iniciais...');
-        const [
-          coursesData,
-          productsData,
-          settingsData,
-          usersData,
-          notificationsData,
-          watchHistoryData,
-          favoritesData,
-          resourcesData,
-          supportTicketsData,
-          bannersData,
-          fixedNotificationsData,
-          userSessionsData,
-          securityLogsData
-        ] = await Promise.all([
-          courseService.getAll(),
-          productService.getAll(),
-          settingsService.get(),
-          userService.getAll(),
-          notificationService.getAll(),
-          watchHistoryService.getAll(),
-          favoriteService.getAll(),
-          resourceService.getAll(),
-          supportTicketService.getAll(),
-          bannerService.getAll(),
-          fixedNotificationService.getAll(),
-          userSessionService.getAll(),
-          securityLogService.getAll()
-        ]);
+    // Load data from localStorage
+    const savedCourses = localStorage.getItem('courses');
+    const savedProducts = localStorage.getItem('products');
+    const savedSettings = localStorage.getItem('settings');
+    const savedUsers = localStorage.getItem('users');
+    const savedNotifications = localStorage.getItem('notifications');
+    const savedWatchHistory = localStorage.getItem('watchHistory');
+    const savedFavorites = localStorage.getItem('favorites');
+    const savedResources = localStorage.getItem('resources');
+    const savedSupportTickets = localStorage.getItem('supportTickets');
+    const savedBanners = localStorage.getItem('banners');
+    const savedFixedNotifications = localStorage.getItem('fixedNotifications');
+    const savedUserSessions = localStorage.getItem('userSessions');
+    const savedSecurityLogs = localStorage.getItem('securityLogs');
 
-        console.log('📊 Dados carregados:', {
-          courses: coursesData.length,
-          products: productsData.length,
-          users: usersData.length,
-          notifications: notificationsData.length,
-          resources: resourcesData.length
-        });
-
-        setCourses(coursesData);
-        setProducts(productsData);
-        setSettings(settingsData || defaultSettings);
-        setUsers(usersData);
-        setNotifications(notificationsData);
-        setWatchHistory(watchHistoryData);
-        setFavorites(favoritesData);
-        setResources(resourcesData);
-        setSupportTickets(supportTicketsData);
-        setBanners(bannersData);
-        setFixedNotifications(fixedNotificationsData);
-        setUserSessions(userSessionsData);
-        setSecurityLogs(securityLogsData);
-
-        // Configurar listeners em tempo real
-        console.log('🔄 Configurando listeners em tempo real...');
-        const unsubscribeCourses = subscribeToCollection('courses', (data) => {
-          console.log('📚 Cursos atualizados:', data.length);
-          setCourses(data);
-        });
-        
-        const unsubscribeProducts = subscribeToCollection('products', (data) => {
-          console.log('📦 Produtos atualizados:', data.length);
-          setProducts(data);
-        });
-        
-        const unsubscribeUsers = subscribeToCollection('users', (data) => {
-          console.log('👥 Usuários atualizados:', data.length);
-          setUsers(data);
-        });
-        
-        const unsubscribeNotifications = subscribeToCollection('notifications', (data) => {
-          console.log('🔔 Notificações atualizadas:', data.length);
-          setNotifications(data);
-        });
-        
-        const unsubscribeWatchHistory = subscribeToCollection('watchHistory', (data) => {
-          console.log('📺 Histórico atualizado:', data.length);
-          setWatchHistory(data);
-        });
-        
-        const unsubscribeFavorites = subscribeToCollection('favorites', (data) => {
-          console.log('❤️ Favoritos atualizados:', data.length);
-          setFavorites(data);
-        });
-        
-        const unsubscribeResources = subscribeToCollection('resources', (data) => {
-          console.log('📁 Recursos atualizados:', data.length);
-          setResources(data);
-        });
-        
-        const unsubscribeBanners = subscribeToCollection('banners', (data) => {
-          console.log('🖼️ Banners atualizados:', data.length);
-          setBanners(data);
-        });
-        
-        const unsubscribeFixedNotifications = subscribeToCollection('fixedNotifications', (data) => {
-          console.log('📢 Notificações fixas atualizadas:', data.length);
-          setFixedNotifications(data);
-        });
-        
-        const unsubscribeUserSessions = subscribeToCollection('userSessions', (data) => {
-          console.log('🔐 Sessões atualizadas:', data.length);
-          setUserSessions(data);
-        });
-        
-        const unsubscribeSecurityLogs = subscribeToCollection('securityLogs', (data) => {
-          console.log('🛡️ Logs de segurança atualizados:', data.length);
-          setSecurityLogs(data);
-        });
-
-        unsubscribeFunctions.current = [
-          unsubscribeCourses,
-          unsubscribeProducts,
-          unsubscribeUsers,
-          unsubscribeNotifications,
-          unsubscribeWatchHistory,
-          unsubscribeFavorites,
-          unsubscribeResources,
-          unsubscribeBanners,
-          unsubscribeFixedNotifications,
-          unsubscribeUserSessions,
-          unsubscribeSecurityLogs
-        ];
-
-        console.log('✅ Dados carregados e listeners configurados com sucesso!');
-      } catch (error) {
-        console.error('❌ Erro ao carregar dados do Firebase:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    initializeData();
-
-    // Cleanup listeners
-    return () => {
-      console.log('🧹 Limpando listeners...');
-      unsubscribeFunctions.current.forEach(unsubscribe => unsubscribe());
-    };
+    if (savedCourses) setCourses(JSON.parse(savedCourses));
+    if (savedProducts) setProducts(JSON.parse(savedProducts));
+    if (savedSettings) setSettings({ ...defaultSettings, ...JSON.parse(savedSettings) });
+    if (savedUsers) setUsers(JSON.parse(savedUsers));
+    if (savedNotifications) {
+      const parsedNotifications = JSON.parse(savedNotifications);
+      const limitedNotifications = parsedNotifications.slice(-100);
+      setNotifications(limitedNotifications);
+      localStorage.setItem('notifications', JSON.stringify(limitedNotifications));
+    }
+    if (savedWatchHistory) setWatchHistory(JSON.parse(savedWatchHistory));
+    if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
+    if (savedResources) setResources(JSON.parse(savedResources));
+    if (savedSupportTickets) setSupportTickets(JSON.parse(savedSupportTickets));
+    if (savedBanners) setBanners(JSON.parse(savedBanners));
+    if (savedFixedNotifications) setFixedNotifications(JSON.parse(savedFixedNotifications));
+    if (savedUserSessions) setUserSessions(JSON.parse(savedUserSessions));
+    if (savedSecurityLogs) setSecurityLogs(JSON.parse(savedSecurityLogs));
   }, []);
 
-  // Verificar desbloqueios programados
   useEffect(() => {
-    const checkScheduledUnlocks = async () => {
+    const checkScheduledUnlocks = () => {
       const now = Date.now();
       
       if (now - lastNotificationCheck.current < 30000) {
@@ -290,75 +153,101 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       lastNotificationCheck.current = now;
       
       const currentDate = new Date();
+      const coursesToUpdate: Course[] = [];
+      const productsToUpdate: Product[] = [];
       
-      // Verificar cursos para desbloqueio
-      for (const course of courses) {
+      courses.forEach(course => {
         if (course.isBlocked && course.scheduledUnlockDate) {
           const unlockDate = new Date(course.scheduledUnlockDate);
           const unlockKey = `scheduled-course-${course.id}`;
           
           if (currentDate >= unlockDate && !processedUnlocks.current.has(unlockKey)) {
-            try {
-              await updateCourse(course.id, {
-                isBlocked: false,
-                scheduledUnlockDate: undefined
-              });
-              
-              processedUnlocks.current.add(unlockKey);
-              
-              // Notificar usuários
-              const nonAdminUsers = users.filter(user => !user.isAdmin);
-              for (const user of nonAdminUsers) {
-                await addNotification({
-                  id: `scheduled-unlock-course-${course.id}-${user.id}`,
-                  userId: user.id,
-                  title: 'Curso Desbloqueado Automaticamente! 🎉',
-                  message: `O curso "${course.title}" foi desbloqueado conforme programado e está disponível para você!`,
-                  type: 'success',
-                  read: false,
-                  createdAt: new Date().toISOString(),
-                });
-              }
-            } catch (error) {
-              console.error('Erro ao desbloquear curso:', error);
-            }
+            coursesToUpdate.push({
+              ...course,
+              isBlocked: false,
+              scheduledUnlockDate: undefined
+            });
+            processedUnlocks.current.add(unlockKey);
           }
         }
-      }
+      });
 
-      // Verificar produtos para desbloqueio
-      for (const product of products) {
+      products.forEach(product => {
         if (product.isBlocked && product.scheduledUnlockDate) {
           const unlockDate = new Date(product.scheduledUnlockDate);
           const unlockKey = `scheduled-product-${product.id}`;
           
           if (currentDate >= unlockDate && !processedUnlocks.current.has(unlockKey)) {
-            try {
-              await updateProduct(product.id, {
-                isBlocked: false,
-                scheduledUnlockDate: undefined
-              });
-              
-              processedUnlocks.current.add(unlockKey);
-              
-              // Notificar usuários
-              const nonAdminUsers = users.filter(user => !user.isAdmin);
-              for (const user of nonAdminUsers) {
-                await addNotification({
-                  id: `scheduled-unlock-product-${product.id}-${user.id}`,
-                  userId: user.id,
-                  title: 'Produto Desbloqueado Automaticamente! 🎉',
-                  message: `O produto "${product.title}" foi desbloqueado conforme programado e está disponível para você!`,
-                  type: 'success',
-                  read: false,
-                  createdAt: new Date().toISOString(),
-                });
-              }
-            } catch (error) {
-              console.error('Erro ao desbloquear produto:', error);
-            }
+            productsToUpdate.push({
+              ...product,
+              isBlocked: false,
+              scheduledUnlockDate: undefined
+            });
+            processedUnlocks.current.add(unlockKey);
           }
         }
+      });
+
+      if (coursesToUpdate.length > 0) {
+        const updatedCourses = courses.map(course => {
+          const updatedCourse = coursesToUpdate.find(c => c.id === course.id);
+          return updatedCourse || course;
+        });
+        
+        setCourses(updatedCourses);
+        localStorage.setItem('courses', JSON.stringify(updatedCourses));
+
+        const nonAdminUsers = users.filter(user => !user.isAdmin);
+        
+        coursesToUpdate.forEach(course => {
+          nonAdminUsers.forEach(user => {
+            const notificationId = `scheduled-unlock-course-${course.id}-${user.id}`;
+            
+            const existingNotification = notifications.find(n => n.id === notificationId);
+            if (!existingNotification) {
+              addNotification({
+                id: notificationId,
+                userId: user.id,
+                title: 'Curso Desbloqueado Automaticamente! 🎉',
+                message: `O curso "${course.title}" foi desbloqueado conforme programado e está disponível para você!`,
+                type: 'success',
+                read: false,
+                createdAt: new Date().toISOString(),
+              });
+            }
+          });
+        });
+      }
+
+      if (productsToUpdate.length > 0) {
+        const updatedProducts = products.map(product => {
+          const updatedProduct = productsToUpdate.find(p => p.id === product.id);
+          return updatedProduct || product;
+        });
+        
+        setProducts(updatedProducts);
+        localStorage.setItem('products', JSON.stringify(updatedProducts));
+
+        const nonAdminUsers = users.filter(user => !user.isAdmin);
+        
+        productsToUpdate.forEach(product => {
+          nonAdminUsers.forEach(user => {
+            const notificationId = `scheduled-unlock-product-${product.id}-${user.id}`;
+            
+            const existingNotification = notifications.find(n => n.id === notificationId);
+            if (!existingNotification) {
+              addNotification({
+                id: notificationId,
+                userId: user.id,
+                title: 'Produto Desbloqueado Automaticamente! 🎉',
+                message: `O produto "${product.title}" foi desbloqueado conforme programado e está disponível para você!`,
+                type: 'success',
+                read: false,
+                createdAt: new Date().toISOString(),
+              });
+            }
+          });
+        });
       }
     };
 
@@ -369,332 +258,236 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearTimeout(timeoutId);
       clearInterval(intervalId);
     };
-  }, [courses, products, users]);
+  }, [courses, products, users, notifications]);
 
-  // Implementação das funções CRUD com logs detalhados
-  const addCourse = async (course: Course) => {
-    try {
-      console.log('📚 Adicionando curso:', course.title);
-      const { id, ...courseData } = course;
-      const newId = await courseService.create(courseData);
-      console.log('✅ Curso adicionado com ID:', newId);
-    } catch (error) {
-      console.error('❌ Erro ao adicionar curso:', error);
-      throw error;
+  const addCourse = (course: Course) => {
+    const newCourses = [...courses, course];
+    setCourses(newCourses);
+    localStorage.setItem('courses', JSON.stringify(newCourses));
+  };
+
+  const updateCourse = (courseId: string, courseUpdate: Partial<Course>) => {
+    const newCourses = courses.map(course => 
+      course.id === courseId ? { ...course, ...courseUpdate } : course
+    );
+    setCourses(newCourses);
+    localStorage.setItem('courses', JSON.stringify(newCourses));
+  };
+
+  const deleteCourse = (courseId: string) => {
+    const newCourses = courses.filter(course => course.id !== courseId);
+    setCourses(newCourses);
+    localStorage.setItem('courses', JSON.stringify(newCourses));
+  };
+
+  const addProduct = (product: Product) => {
+    const newProducts = [...products, product];
+    setProducts(newProducts);
+    localStorage.setItem('products', JSON.stringify(newProducts));
+  };
+
+  const updateProduct = (productId: string, productUpdate: Partial<Product>) => {
+    const newProducts = products.map(product => 
+      product.id === productId ? { ...product, ...productUpdate } : product
+    );
+    setProducts(newProducts);
+    localStorage.setItem('products', JSON.stringify(newProducts));
+  };
+
+  const deleteProduct = (productId: string) => {
+    const newProducts = products.filter(product => product.id !== productId);
+    setProducts(newProducts);
+    localStorage.setItem('products', JSON.stringify(newProducts));
+  };
+
+  const updateSettings = (settingsUpdate: Partial<AppSettings>) => {
+    const newSettings = { ...settings, ...settingsUpdate };
+    setSettings(newSettings);
+    localStorage.setItem('settings', JSON.stringify(newSettings));
+  };
+
+  const addUser = (user: User) => {
+    const newUsers = [...users, user];
+    setUsers(newUsers);
+    localStorage.setItem('users', JSON.stringify(newUsers));
+  };
+
+  const deleteUser = (userId: string) => {
+    const newUsers = users.filter(user => user.id !== userId);
+    setUsers(newUsers);
+    localStorage.setItem('users', JSON.stringify(newUsers));
+  };
+
+  const updateUser = (userId: string, updates: Partial<User>) => {
+    const newUsers = users.map(user => 
+      user.id === userId ? { ...user, ...updates } : user
+    );
+    setUsers(newUsers);
+    localStorage.setItem('users', JSON.stringify(newUsers));
+    
+    const currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+    if (currentUser && currentUser.id === userId) {
+      const updatedCurrentUser = { ...currentUser, ...updates };
+      localStorage.setItem('currentUser', JSON.stringify(updatedCurrentUser));
     }
   };
 
-  const updateCourse = async (courseId: string, courseUpdate: Partial<Course>) => {
-    try {
-      console.log('📚 Atualizando curso:', courseId, courseUpdate);
-      await courseService.update(courseId, courseUpdate);
-      console.log('✅ Curso atualizado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao atualizar curso:', error);
-      throw error;
+  const addNotification = (notification: Notification) => {
+    const isDuplicate = notifications.some(n => 
+      n.userId === notification.userId && 
+      n.title === notification.title && 
+      n.message === notification.message &&
+      Math.abs(new Date(n.createdAt).getTime() - new Date(notification.createdAt).getTime()) < 60000
+    );
+    
+    if (isDuplicate) {
+      return;
     }
+    
+    const newNotifications = [...notifications, notification];
+    const limitedNotifications = newNotifications.slice(-100);
+    
+    setNotifications(limitedNotifications);
+    localStorage.setItem('notifications', JSON.stringify(limitedNotifications));
   };
 
-  const deleteCourse = async (courseId: string) => {
-    try {
-      console.log('📚 Deletando curso:', courseId);
-      await courseService.delete(courseId);
-      console.log('✅ Curso deletado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao deletar curso:', error);
-      throw error;
-    }
+  const markNotificationAsRead = (notificationId: string) => {
+    const newNotifications = notifications.map(notification =>
+      notification.id === notificationId ? { ...notification, read: true } : notification
+    );
+    setNotifications(newNotifications);
+    localStorage.setItem('notifications', JSON.stringify(newNotifications));
   };
 
-  const addProduct = async (product: Product) => {
-    try {
-      console.log('📦 Adicionando produto:', product.title);
-      const { id, ...productData } = product;
-      const newId = await productService.create(productData);
-      console.log('✅ Produto adicionado com ID:', newId);
-    } catch (error) {
-      console.error('❌ Erro ao adicionar produto:', error);
-      throw error;
-    }
+  const deleteNotification = (notificationId: string) => {
+    const newNotifications = notifications.filter(notification => notification.id !== notificationId);
+    setNotifications(newNotifications);
+    localStorage.setItem('notifications', JSON.stringify(newNotifications));
   };
 
-  const updateProduct = async (productId: string, productUpdate: Partial<Product>) => {
-    try {
-      console.log('📦 Atualizando produto:', productId, productUpdate);
-      await productService.update(productId, productUpdate);
-      console.log('✅ Produto atualizado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao atualizar produto:', error);
-      throw error;
-    }
+  const markAllAsRead = (userId: string) => {
+    const newNotifications = notifications.map(notification =>
+      notification.userId === userId ? { ...notification, read: true } : notification
+    );
+    setNotifications(newNotifications);
+    localStorage.setItem('notifications', JSON.stringify(newNotifications));
   };
 
-  const deleteProduct = async (productId: string) => {
-    try {
-      console.log('📦 Deletando produto:', productId);
-      await productService.delete(productId);
-      console.log('✅ Produto deletado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao deletar produto:', error);
-      throw error;
+  const addToWatchHistory = (history: WatchHistory) => {
+    const existingIndex = watchHistory.findIndex(h => 
+      h.userId === history.userId && 
+      ((h.courseId && history.courseId && h.courseId === history.courseId) ||
+       (h.productId && history.productId && h.productId === history.productId))
+    );
+    
+    let newWatchHistory;
+    if (existingIndex >= 0) {
+      newWatchHistory = [...watchHistory];
+      newWatchHistory[existingIndex] = history;
+    } else {
+      newWatchHistory = [...watchHistory, history];
     }
+    
+    setWatchHistory(newWatchHistory);
+    localStorage.setItem('watchHistory', JSON.stringify(newWatchHistory));
   };
 
-  const updateSettings = async (settingsUpdate: Partial<AppSettings>) => {
-    try {
-      console.log('⚙️ Atualizando configurações:', settingsUpdate);
-      await settingsService.update(settingsUpdate);
-      setSettings(prev => ({ ...prev, ...settingsUpdate }));
-      console.log('✅ Configurações atualizadas com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao atualizar configurações:', error);
-      throw error;
+  const addFavorite = (userId: string, courseId?: string, productId?: string) => {
+    const existingFavorite = favorites.find(fav => 
+      fav.userId === userId && 
+      ((courseId && fav.courseId === courseId) || (productId && fav.productId === productId))
+    );
+    
+    if (existingFavorite) {
+      return;
     }
+    
+    const favorite: Favorite = {
+      id: Date.now().toString(),
+      userId,
+      courseId,
+      productId,
+      addedAt: new Date().toISOString(),
+    };
+    
+    const newFavorites = [...favorites, favorite];
+    setFavorites(newFavorites);
+    localStorage.setItem('favorites', JSON.stringify(newFavorites));
   };
 
-  const addUser = async (user: User) => {
-    try {
-      console.log('👤 Adicionando usuário:', user.name);
-      const { id, ...userData } = user;
-      const newId = await userService.create(userData);
-      console.log('✅ Usuário adicionado com ID:', newId);
-    } catch (error) {
-      console.error('❌ Erro ao adicionar usuário:', error);
-      throw error;
-    }
+  const removeFavorite = (userId: string, courseId?: string, productId?: string) => {
+    const newFavorites = favorites.filter(fav => 
+      !(fav.userId === userId && 
+        ((courseId && fav.courseId === courseId) || (productId && fav.productId === productId)))
+    );
+    setFavorites(newFavorites);
+    localStorage.setItem('favorites', JSON.stringify(newFavorites));
   };
 
-  const deleteUser = async (userId: string) => {
-    try {
-      console.log('👤 Deletando usuário:', userId);
-      await userService.delete(userId);
-      console.log('✅ Usuário deletado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao deletar usuário:', error);
-      throw error;
-    }
+  const addResource = (resource: Resource) => {
+    const newResources = [...resources, resource];
+    setResources(newResources);
+    localStorage.setItem('resources', JSON.stringify(newResources));
   };
 
-  const updateUser = async (userId: string, updates: Partial<User>) => {
-    try {
-      console.log('👤 Atualizando usuário:', userId, updates);
-      await userService.update(userId, updates);
-      console.log('✅ Usuário atualizado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao atualizar usuário:', error);
-      throw error;
-    }
+  const deleteResource = (resourceId: string) => {
+    const newResources = resources.filter(resource => resource.id !== resourceId);
+    setResources(newResources);
+    localStorage.setItem('resources', JSON.stringify(newResources));
   };
 
-  const addNotification = async (notification: Notification) => {
-    try {
-      console.log('🔔 Adicionando notificação:', notification.title);
-      const { id, ...notificationData } = notification;
-      const newId = await notificationService.create(notificationData);
-      console.log('✅ Notificação adicionada com ID:', newId);
-    } catch (error) {
-      console.error('❌ Erro ao adicionar notificação:', error);
-      throw error;
-    }
+  const addSupportTicket = (ticket: SupportTicket) => {
+    const newTickets = [...supportTickets, ticket];
+    setSupportTickets(newTickets);
+    localStorage.setItem('supportTickets', JSON.stringify(newTickets));
   };
 
-  const markNotificationAsRead = async (notificationId: string) => {
-    try {
-      console.log('🔔 Marcando notificação como lida:', notificationId);
-      await notificationService.update(notificationId, { read: true });
-      console.log('✅ Notificação marcada como lida');
-    } catch (error) {
-      console.error('❌ Erro ao marcar notificação como lida:', error);
-      throw error;
-    }
+  const updateSupportTicket = (ticketId: string, updates: Partial<SupportTicket>) => {
+    const newTickets = supportTickets.map(ticket =>
+      ticket.id === ticketId ? { ...ticket, ...updates } : ticket
+    );
+    setSupportTickets(newTickets);
+    localStorage.setItem('supportTickets', JSON.stringify(newTickets));
   };
 
-  const deleteNotification = async (notificationId: string) => {
-    try {
-      console.log('🔔 Deletando notificação:', notificationId);
-      await notificationService.delete(notificationId);
-      console.log('✅ Notificação deletada com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao deletar notificação:', error);
-      throw error;
-    }
+  const addBanner = (banner: Banner) => {
+    const newBanners = [...banners, banner];
+    setBanners(newBanners);
+    localStorage.setItem('banners', JSON.stringify(newBanners));
   };
 
-  const markAllAsRead = async (userId: string) => {
-    try {
-      console.log('🔔 Marcando todas as notificações como lidas para usuário:', userId);
-      const userNotifications = notifications.filter(n => n.userId === userId && !n.read);
-      await Promise.all(
-        userNotifications.map(notification => 
-          notificationService.update(notification.id, { read: true })
-        )
-      );
-      console.log('✅ Todas as notificações marcadas como lidas');
-    } catch (error) {
-      console.error('❌ Erro ao marcar todas as notificações como lidas:', error);
-      throw error;
-    }
+  const updateBanner = (bannerId: string, updates: Partial<Banner>) => {
+    const newBanners = banners.map(banner =>
+      banner.id === bannerId ? { ...banner, ...updates } : banner
+    );
+    setBanners(newBanners);
+    localStorage.setItem('banners', JSON.stringify(newBanners));
   };
 
-  const addToWatchHistory = async (history: WatchHistory) => {
-    try {
-      console.log('📺 Adicionando ao histórico:', history.id);
-      const { id, ...historyData } = history;
-      await watchHistoryService.createOrUpdate(historyData);
-      console.log('✅ Histórico atualizado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao adicionar ao histórico:', error);
-      throw error;
-    }
+  const deleteBanner = (bannerId: string) => {
+    const newBanners = banners.filter(banner => banner.id !== bannerId);
+    setBanners(newBanners);
+    localStorage.setItem('banners', JSON.stringify(newBanners));
   };
 
-  const addFavorite = async (userId: string, courseId?: string, productId?: string) => {
-    try {
-      console.log('❤️ Adicionando favorito:', { userId, courseId, productId });
-      await favoriteService.create({
-        id: Date.now().toString(),
-        userId,
-        courseId,
-        productId,
-        addedAt: new Date().toISOString(),
-      });
-      console.log('✅ Favorito adicionado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao adicionar favorito:', error);
-      throw error;
-    }
+  const addFixedNotification = (notification: FixedNotification) => {
+    const newNotifications = [...fixedNotifications, notification];
+    setFixedNotifications(newNotifications);
+    localStorage.setItem('fixedNotifications', JSON.stringify(newNotifications));
   };
 
-  const removeFavorite = async (userId: string, courseId?: string, productId?: string) => {
-    try {
-      console.log('❤️ Removendo favorito:', { userId, courseId, productId });
-      const favorite = favorites.find(fav => 
-        fav.userId === userId && 
-        ((courseId && fav.courseId === courseId) || (productId && fav.productId === productId))
-      );
-      
-      if (favorite) {
-        await favoriteService.delete(favorite.id);
-        console.log('✅ Favorito removido com sucesso');
-      }
-    } catch (error) {
-      console.error('❌ Erro ao remover favorito:', error);
-      throw error;
-    }
+  const updateFixedNotification = (notificationId: string, updates: Partial<FixedNotification>) => {
+    const newNotifications = fixedNotifications.map(notification =>
+      notification.id === notificationId ? { ...notification, ...updates } : notification
+    );
+    setFixedNotifications(newNotifications);
+    localStorage.setItem('fixedNotifications', JSON.stringify(newNotifications));
   };
 
-  const addResource = async (resource: Resource) => {
-    try {
-      console.log('📁 Adicionando recurso:', resource.title);
-      const { id, ...resourceData } = resource;
-      const newId = await resourceService.create(resourceData);
-      console.log('✅ Recurso adicionado com ID:', newId);
-    } catch (error) {
-      console.error('❌ Erro ao adicionar recurso:', error);
-      throw error;
-    }
-  };
-
-  const deleteResource = async (resourceId: string) => {
-    try {
-      console.log('📁 Deletando recurso:', resourceId);
-      await resourceService.delete(resourceId);
-      console.log('✅ Recurso deletado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao deletar recurso:', error);
-      throw error;
-    }
-  };
-
-  const addSupportTicket = async (ticket: SupportTicket) => {
-    try {
-      console.log('🎫 Adicionando ticket de suporte:', ticket.subject);
-      const { id, ...ticketData } = ticket;
-      const newId = await supportTicketService.create(ticketData);
-      console.log('✅ Ticket de suporte adicionado com ID:', newId);
-    } catch (error) {
-      console.error('❌ Erro ao adicionar ticket de suporte:', error);
-      throw error;
-    }
-  };
-
-  const updateSupportTicket = async (ticketId: string, updates: Partial<SupportTicket>) => {
-    try {
-      console.log('🎫 Atualizando ticket de suporte:', ticketId, updates);
-      await supportTicketService.update(ticketId, updates);
-      console.log('✅ Ticket de suporte atualizado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao atualizar ticket de suporte:', error);
-      throw error;
-    }
-  };
-
-  const addBanner = async (banner: Banner) => {
-    try {
-      console.log('🖼️ Adicionando banner:', banner.title);
-      const { id, ...bannerData } = banner;
-      const newId = await bannerService.create(bannerData);
-      console.log('✅ Banner adicionado com ID:', newId);
-    } catch (error) {
-      console.error('❌ Erro ao adicionar banner:', error);
-      throw error;
-    }
-  };
-
-  const updateBanner = async (bannerId: string, updates: Partial<Banner>) => {
-    try {
-      console.log('🖼️ Atualizando banner:', bannerId, updates);
-      await bannerService.update(bannerId, updates);
-      console.log('✅ Banner atualizado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao atualizar banner:', error);
-      throw error;
-    }
-  };
-
-  const deleteBanner = async (bannerId: string) => {
-    try {
-      console.log('🖼️ Deletando banner:', bannerId);
-      await bannerService.delete(bannerId);
-      console.log('✅ Banner deletado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao deletar banner:', error);
-      throw error;
-    }
-  };
-
-  const addFixedNotification = async (notification: FixedNotification) => {
-    try {
-      console.log('📢 Adicionando notificação fixa:', notification.title);
-      const { id, ...notificationData } = notification;
-      const newId = await fixedNotificationService.create(notificationData);
-      console.log('✅ Notificação fixa adicionada com ID:', newId);
-    } catch (error) {
-      console.error('❌ Erro ao adicionar notificação fixa:', error);
-      throw error;
-    }
-  };
-
-  const updateFixedNotification = async (notificationId: string, updates: Partial<FixedNotification>) => {
-    try {
-      console.log('📢 Atualizando notificação fixa:', notificationId, updates);
-      await fixedNotificationService.update(notificationId, updates);
-      console.log('✅ Notificação fixa atualizada com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao atualizar notificação fixa:', error);
-      throw error;
-    }
-  };
-
-  const deleteFixedNotification = async (notificationId: string) => {
-    try {
-      console.log('📢 Deletando notificação fixa:', notificationId);
-      await fixedNotificationService.delete(notificationId);
-      console.log('✅ Notificação fixa deletada com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao deletar notificação fixa:', error);
-      throw error;
-    }
+  const deleteFixedNotification = (notificationId: string) => {
+    const newNotifications = fixedNotifications.filter(notification => notification.id !== notificationId);
+    setFixedNotifications(newNotifications);
+    localStorage.setItem('fixedNotifications', JSON.stringify(newNotifications));
   };
 
   const getActiveFixedNotifications = () => {
@@ -709,126 +502,126 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const blockUser = async (userId: string, reason: string, adminId: string) => {
-    try {
-      console.log('🚫 Bloqueando usuário:', userId, reason);
-      const updates: Partial<User> = {
-        isBlocked: true,
-        blockedReason: reason,
-        blockedAt: new Date().toISOString()
-      };
-      
-      await updateUser(userId, updates);
-      await terminateAllUserSessions(userId, adminId);
-      
-      await securityLogService.create({
-        id: Date.now().toString(),
-        userId,
-        action: 'blocked',
-        ipAddress: 'admin-action',
-        userAgent: 'admin-panel',
-        timestamp: new Date().toISOString(),
-        details: `Usuário bloqueado pelo administrador. Motivo: ${reason}`,
-        severity: 'high',
-        adminId
-      });
-      console.log('✅ Usuário bloqueado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao bloquear usuário:', error);
-      throw error;
-    }
+  const blockUser = (userId: string, reason: string, adminId: string) => {
+    const updates: Partial<User> = {
+      isBlocked: true,
+      blockedReason: reason,
+      blockedAt: new Date().toISOString()
+    };
+    
+    updateUser(userId, updates);
+    terminateAllUserSessions(userId, adminId);
+    
+    const newLog: SecurityLog = {
+      id: Date.now().toString(),
+      userId,
+      action: 'blocked',
+      ipAddress: 'admin-action',
+      userAgent: 'admin-panel',
+      timestamp: new Date().toISOString(),
+      details: `Usuário bloqueado pelo administrador. Motivo: ${reason}`,
+      severity: 'high',
+      adminId
+    };
+    
+    const newLogs = [...securityLogs, newLog];
+    setSecurityLogs(newLogs);
+    localStorage.setItem('securityLogs', JSON.stringify(newLogs));
   };
 
-  const unblockUser = async (userId: string, adminId: string) => {
-    try {
-      console.log('✅ Desbloqueando usuário:', userId);
-      const updates: Partial<User> = {
-        isBlocked: false,
-        blockedReason: undefined,
-        blockedAt: undefined
-      };
-      
-      await updateUser(userId, updates);
-      
-      await securityLogService.create({
-        id: Date.now().toString(),
-        userId,
-        action: 'unblocked',
-        ipAddress: 'admin-action',
-        userAgent: 'admin-panel',
-        timestamp: new Date().toISOString(),
-        details: 'Usuário desbloqueado pelo administrador',
-        severity: 'medium',
-        adminId
-      });
-      console.log('✅ Usuário desbloqueado com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao desbloquear usuário:', error);
-      throw error;
-    }
+  const unblockUser = (userId: string, adminId: string) => {
+    const updates: Partial<User> = {
+      isBlocked: false,
+      blockedReason: undefined,
+      blockedAt: undefined
+    };
+    
+    updateUser(userId, updates);
+    
+    const newLog: SecurityLog = {
+      id: Date.now().toString(),
+      userId,
+      action: 'unblocked',
+      ipAddress: 'admin-action',
+      userAgent: 'admin-panel',
+      timestamp: new Date().toISOString(),
+      details: 'Usuário desbloqueado pelo administrador',
+      severity: 'medium',
+      adminId
+    };
+    
+    const newLogs = [...securityLogs, newLog];
+    setSecurityLogs(newLogs);
+    localStorage.setItem('securityLogs', JSON.stringify(newLogs));
   };
 
-  const terminateUserSession = async (sessionId: string, adminId: string) => {
-    try {
-      console.log('🔐 Terminando sessão:', sessionId);
-      const session = userSessions.find(s => s.id === sessionId);
-      if (!session) return;
-      
-      await userSessionService.update(sessionId, {
-        isActive: false,
-        logoutTime: new Date().toISOString(),
-        sessionDuration: Math.floor((Date.now() - new Date(session.loginTime).getTime()) / (1000 * 60))
-      });
-      
-      await securityLogService.create({
-        id: Date.now().toString(),
-        userId: session.userId,
-        action: 'logout',
-        ipAddress: session.ipAddress,
-        userAgent: session.userAgent,
-        timestamp: new Date().toISOString(),
-        details: `Sessão terminada pelo administrador (IP: ${session.ipAddress})`,
-        severity: 'medium',
-        adminId
-      });
-      console.log('✅ Sessão terminada com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao terminar sessão:', error);
-      throw error;
-    }
-  };
-
-  const terminateAllUserSessions = async (userId: string, adminId: string) => {
-    try {
-      console.log('🔐 Terminando todas as sessões do usuário:', userId);
-      const userActiveSessions = userSessions.filter(s => s.userId === userId && s.isActive);
-      
-      await Promise.all(
-        userActiveSessions.map(session =>
-          userSessionService.update(session.id, {
+  const terminateUserSession = (sessionId: string, adminId: string) => {
+    const session = userSessions.find(s => s.id === sessionId);
+    if (!session) return;
+    
+    const updatedSessions = userSessions.map(s =>
+      s.id === sessionId
+        ? {
+            ...s,
             isActive: false,
             logoutTime: new Date().toISOString(),
-            sessionDuration: Math.floor((Date.now() - new Date(session.loginTime).getTime()) / (1000 * 60))
-          })
-        )
-      );
-      
-      await securityLogService.create({
-        id: Date.now().toString(),
-        userId,
-        action: 'logout',
-        ipAddress: 'admin-action',
-        userAgent: 'admin-panel',
-        timestamp: new Date().toISOString(),
-        details: `Todas as sessões (${userActiveSessions.length}) terminadas pelo administrador`,
-        severity: 'high',
-        adminId
-      });
-      console.log('✅ Todas as sessões terminadas com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao terminar todas as sessões:', error);
-      throw error;
-    }
+            sessionDuration: Math.floor((Date.now() - new Date(s.loginTime).getTime()) / (1000 * 60))
+          }
+        : s
+    );
+    
+    setUserSessions(updatedSessions);
+    localStorage.setItem('userSessions', JSON.stringify(updatedSessions));
+    
+    const newLog: SecurityLog = {
+      id: Date.now().toString(),
+      userId: session.userId,
+      action: 'logout',
+      ipAddress: session.ipAddress,
+      userAgent: session.userAgent,
+      timestamp: new Date().toISOString(),
+      details: `Sessão terminada pelo administrador (IP: ${session.ipAddress})`,
+      severity: 'medium',
+      adminId
+    };
+    
+    const newLogs = [...securityLogs, newLog];
+    setSecurityLogs(newLogs);
+    localStorage.setItem('securityLogs', JSON.stringify(newLogs));
+  };
+
+  const terminateAllUserSessions = (userId: string, adminId: string) => {
+    const userActiveSessions = userSessions.filter(s => s.userId === userId && s.isActive);
+    
+    const updatedSessions = userSessions.map(s =>
+      s.userId === userId && s.isActive
+        ? {
+            ...s,
+            isActive: false,
+            logoutTime: new Date().toISOString(),
+            sessionDuration: Math.floor((Date.now() - new Date(s.loginTime).getTime()) / (1000 * 60))
+          }
+        : s
+    );
+    
+    setUserSessions(updatedSessions);
+    localStorage.setItem('userSessions', JSON.stringify(updatedSessions));
+    
+    const newLog: SecurityLog = {
+      id: Date.now().toString(),
+      userId,
+      action: 'logout',
+      ipAddress: 'admin-action',
+      userAgent: 'admin-panel',
+      timestamp: new Date().toISOString(),
+      details: `Todas as sessões (${userActiveSessions.length}) terminadas pelo administrador`,
+      severity: 'high',
+      adminId
+    };
+    
+    const newLogs = [...securityLogs, newLog];
+    setSecurityLogs(newLogs);
+    localStorage.setItem('securityLogs', JSON.stringify(newLogs));
   };
 
   const getUserSessions = (userId: string): UserSession[] => {
@@ -846,19 +639,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return securityLogs;
   };
 
-  const updateSecuritySettings = async (securitySettings: Partial<SecuritySettings>) => {
-    try {
-      console.log('🛡️ Atualizando configurações de segurança:', securitySettings);
-      const newSettings = {
-        ...settings,
-        security: { ...settings.security, ...securitySettings }
-      };
-      await updateSettings(newSettings);
-      console.log('✅ Configurações de segurança atualizadas com sucesso');
-    } catch (error) {
-      console.error('❌ Erro ao atualizar configurações de segurança:', error);
-      throw error;
-    }
+  const updateSecuritySettings = (securitySettings: Partial<SecuritySettings>) => {
+    const newSettings = {
+      ...settings,
+      security: { ...settings.security, ...securitySettings }
+    };
+    setSettings(newSettings);
+    localStorage.setItem('settings', JSON.stringify(newSettings));
   };
 
   return (
@@ -876,7 +663,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fixedNotifications,
       userSessions,
       securityLogs,
-      loading,
       addCourse,
       updateCourse,
       deleteCourse,
